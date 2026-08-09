@@ -1,5 +1,15 @@
-{%extends 'base.html'%}
-{%block title%}Register{%endblock%}
-{%block content%}
+{%extends 'base.html'%} {%block title%}Register{%endblock%} {%block content%}
 <h1>Register page</h1>
+<a href="{{url_for('home')}}">Home </a>
+
+<form method="POST">
+  {{form.hidden_tag()}}
+  <div>
+    <p>{{form.username.label}}{{form.username()}}</p>
+    <p>{{form.email.label}}{{form.email()}}</p>
+    <p>{{form.password.label}}{{form.password()}}</p>
+    <p>{{form.confirm_password.label}}{{form.confirm_password()}}</p>
+    <p>{{form.submit()}}</p>
+  </div>
+</form>
 {%endblock%}
