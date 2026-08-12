@@ -2,6 +2,6 @@
 {%block title%}Dashboard{%endblock%}
 {%block content%}
 <h1>Dashboard page</h1>
-<p>Welcome to your dashboard</p>
+<p>Welcome <strong>{{user.username}}</strong> to your dashboard</p>
   <a href="{{url_for('home')}}">Home </a>
 {%endblock%}
