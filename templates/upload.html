@@ -1,0 +1,11 @@
+{%extends 'base.html'%} {%block title%}Uploads{%endblock%} {%block content%}
+<h1>Uploads page</h1>
+
+<form method="POST" action="/upload" enctype="multipart/form-data">
+  {{form.hidden_tag()}}
+
+  {{form.filename.label}}{{form.filename()}} {{form.submit()}}
+</form>
+
+<a href="{{url_for('home')}}">Home </a>
+{%endblock%}

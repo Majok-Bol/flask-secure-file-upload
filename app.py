@@ -1,4 +1,4 @@
-from flask import Flask,render_template,redirect,flash,url_for,make_response
+from flask import Flask,render_template,redirect,flash,url_for,make_response,send_from_directory,request
 from flask_wtf import FlaskForm,CSRFProtect
 from wtforms import StringField,SubmitField,EmailField,PasswordField
 from wtforms.validators import Email,EqualTo,Length,InputRequired
@@ -19,6 +19,9 @@ from flask_jwt_extended import(
 from flask_bcrypt import Bcrypt
 
 from datetime import timedelta
+from werkzeug.utils import secure_filename
+from flask_wtf.file import FileField,FileRequired
+from uuid import uuid4
 #load env variables
 load_dotenv()
 app=Flask(__name__)
@@ -44,6 +47,16 @@ app.config['JWT_COOKIE_SAMESITE']='Lax' #set to Strict in production to only acc
 app.config['JWT_ACCESS_TOKEN_EXPIRES']=timedelta(minutes=15)
 #refresh token to prevent redirecting to login again
 app.config['JWT_REFRESH_TOKEN_EXPIRES']=timedelta(days=30)
+#base directory
+BASE_DIR=os.path.dirname(os.path.abspath(__file__))
+# print("BASE DIRECTORY: ",BASE_DIR)
+#create uploads folder
+UPLOAD_FOLDER=os.path.join(BASE_DIR,'assets','uploads')
+# print("UPLOAD FOLDER: ",UPLOAD_FOLDER)
+#configure app folder
+app.config['UPLOAD_FOLDER']=UPLOAD_FOLDER
+#create directory if it doesnt exist
+os.makedirs(UPLOAD_FOLDER,exist_ok=True)
 #initialize app with database
 db=SQLAlchemy(app)
 #initialize flask_migrate
@@ -93,7 +106,7 @@ def register():
         db.session.add(user)
 
         db.session.commit()
-        print("Account created successfully")
+        # print("Account created successfully")
 
         return redirect(url_for('login'))
     
@@ -108,16 +121,16 @@ def login():
         password=form.password.data
         #check username
         user=User.query.filter_by(username=username).first()
-        print("Username found: ",user)
+        # print("Username found: ",user)
         if not user or not bcrypt.check_password_hash(user.password,password):
             print("Invalid username or password")
             return redirect(url_for('login'))
         #create access token for user
         access_token=create_access_token(identity=str(user.id))
-        print("Access token generated: ",access_token)
+        # print("Access token generated: ",access_token)
         #create refresh token 
         refresh_token=create_refresh_token(identity=str(user.id))
-        print("Refresh token generated: ",refresh_token)
+        # print("Refresh token generated: ",refresh_token)
         # return redirect(url_for('dashboard'))
         response=make_response(redirect(url_for("dashboard")))
         #set cookies
@@ -133,12 +146,12 @@ def login():
 def refresh():
     #get user id
     user_id=get_jwt_identity()
-    print("User id: ",user_id)
+    # print("User id: ",user_id)
     access_token=create_access_token(identity=user_id)
-    print("Refresh token: ",access_token)
+    # print("Refresh token: ",access_token)
     response=make_response(redirect(url_for("home")))
     set_access_cookies(response,access_token)
-    print("Refresh cookies set: ",set_refresh_cookies)
+    # print("Refresh cookies set: ",set_refresh_cookies)
     return response   
 @app.route("/dashboard",methods=["POST","GET"])
 @jwt_required()
@@ -146,7 +159,7 @@ def dashboard():
     #get user id
     user_id=get_jwt_identity()
     user=db.session.get(User,int(user_id))
-    print("User id: ",user)
+    # print("User id: ",user)
     if not user:
         return redirect(url_for("login"))
     return render_template("dashboard.html",user=user)
@@ -158,9 +171,49 @@ def logout():
     print("You have been logged out")
     return response
     # return render_template("logout.html")
-@app.route("/uploads")
+@app.route("/upload",methods=['POST','GET'])
+@jwt_required()
 def uploads():
-    return render_template("uploads.html")
+    form=UploadForm()
+    if form.validate_on_submit():
+      #get the file
+      file=form.filename.data
+      print("File to upload: ",file)
+      if not file:
+        return "No file uploaded",400
+      if file.filename=="":
+        return "No file selectd",400
+      original_filename=secure_filename(file.filename)
+    #   print("Original filename: ",original_filename)
+      #allow only .docx files
+      if not original_filename.lower().endswith(".docx"):
+        return 'Only .docx files are allowed',400
+
+      #extension
+      extension=os.path.splitext(original_filename)[1]
+    #   print("Extension: ",extension)
+      stored_filename=f"{uuid4()}{extension}"
+    #   print("Stored filename: ",stored_filename)
+      #create file path for uploaded file
+      file_path=os.path.join(app.config['UPLOAD_FOLDER'],stored_filename)
+    #   print("Saving to: ",file_path)
+      #save file
+      file.save(file_path)
+      user_id=get_jwt_identity()
+    #   print("Current user id: ",user_id)
+      #add to db
+      new_upload=Uploads(original_filename=original_filename,user_id=user_id,stored_filename=stored_filename)
+      db.session.add(new_upload)
+      db.session.commit()
+      return redirect(url_for('view_uploads'))
+    return render_template("upload.html",form=form)
+@app.route("/view_uploads",methods=["POST","GET"])
+@jwt_required()
+def view_uploads():
+    user_id=get_jwt_identity()
+    # print("User id: ",user_id)
+    uploads=Uploads.query.filter_by(user_id=user_id).all()
+    return render_template("view_uploads.html",uploads=uploads)
 
 #customize JWT error messages
 #invalid token provided in the request
@@ -193,13 +246,34 @@ class LoginForm(FlaskForm):
     username=StringField("Username")
     password=PasswordField("Password")
     submit=SubmitField("Login")
+#file upload form
+class UploadForm(FlaskForm):
+    filename=FileField("File",validators=[FileRequired(message="Please select a file to upload")])
+    submit=SubmitField("Upload file")
+
 #database model
 class User(db.Model):
     id=db.Column(db.Integer,primary_key=True)
     username=db.Column(db.String(10))
     email=db.Column(db.String(100))
     password=db.Column(db.String(255))
-    
+    #connect User and Uploads table
+    #one-to-many relationship
+    #one user can have many uploads
+    #many uploads belong to one user
+    uploads=db.relationship("Uploads",back_populates="author")
+#uploads table
+class Uploads(db.Model):
+    id=db.Column(db.Integer,primary_key=True)
+    user_id=db.Column(db.Integer,db.ForeignKey("user.id"))
+    original_filename=db.Column(db.String(255),nullable=False)
+    stored_filename=db.Column(db.String(255),nullable=False,unique=True)
+    #connect to Users table
+    author=db.relationship("User",back_populates="uploads")
+
 
 if __name__=="__main__":
+    with app.app_context():
+        db.create_all()
+        # db.drop_all()
     app.run(debug=True)
