@@ -214,6 +214,75 @@ def view_uploads():
     # print("User id: ",user_id)
     uploads=Uploads.query.filter_by(user_id=user_id).all()
     return render_template("view_uploads.html",uploads=uploads)
+#download file
+@app.route("/download/<int:upload_id>",methods=["POST","GET"])
+@jwt_required()
+def download(upload_id):
+    user_id=get_jwt_identity()
+    upload=db.session.get(Uploads,upload_id)
+    print("File to download: ",upload)
+    if upload is None:
+        print("File not found")
+    if upload.user_id!=user_id:
+        print("Not authorized")
+    print("Download user id: ",user_id)
+    return send_from_directory(directory=app.config['UPLOAD_FOLDER'],path=upload.stored_filename,as_attachment=True,download_name=upload.original_filename)
+@app.route("/delete/<int:upload_id>",methods=["POST","GET"])
+@jwt_required()
+def delete(upload_id):
+    user_id=get_jwt_identity()
+    #file to delete
+    file_to_delete=Uploads.query.filter_by(id=upload_id,user_id=user_id).first()
+    print("File to delete id: ",file_to_delete)
+    if file_to_delete is None:
+        print("No file to delete")
+    #remove physical file path
+    file_path=os.path.join(app.config['UPLOAD_FOLDER'],file_to_delete.stored_filename)
+    if os.path.exists(file_path):
+        os.remove(file_path)
+    #delete database record
+    db.session.delete(file_to_delete)
+    db.session.commit()
+    return redirect(url_for('view_uploads'))
+    # print("User id: ",user_id)
+#update file
+@app.route("/update/<int:upload_id>",methods=["POST","GET"])
+@jwt_required()
+def update(upload_id):
+    user_id=get_jwt_identity()
+    print("User id for file to update: ",user_id)
+    file_to_update=Uploads.query.filter_by(id=upload_id,user_id=user_id).first()
+    if file_to_update is None:
+        print("No file to update: ",file_to_update)
+    #get the form
+    form=UploadForm()
+    if form.validate_on_submit():
+        file=form.filename.data 
+        #original filename
+        original_filename=secure_filename(file.filename)
+        print("Original filname for file to update: ",original_filename)
+        #only allow .docx files
+        if not original_filename.lower().endswith(".docx"):
+            return 'Only .docx files are allowed'
+        #old file path
+        old_file_path=os.path.join(app.config['UPLOAD_FOLDER'],file_to_update.stored_filename)
+        if os.path.exists(old_file_path):
+            os.remove(old_file_path)
+        #generate new stored filename
+        stored_filename=f"{uuid4()}.docx"
+        #generate new file path
+        new_file_path=os.path.join(app.config['UPLOAD_FOLDER'],stored_filename)
+        #save new file
+        file.save(new_file_path)
+        #update database
+        file_to_update.original_filename=original_filename
+        file_to_update.stored_filename=stored_filename
+        db.session.commit()
+        return redirect(url_for('view_uploads'))
+
+    return render_template("update.html",form=form,upload=file_to_update)
+    
+
 
 #customize JWT error messages
 #invalid token provided in the request

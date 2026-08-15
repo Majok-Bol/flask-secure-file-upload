@@ -10,7 +10,12 @@
     <div>
         {%for upload in uploads%}
         <p>{{upload.original_filename}}</p>
+        <a href="{{url_for('download',upload_id=upload.id)}}">download</a>
+        <a href="{{url_for('delete',upload_id=upload.id)}}">Delete</a>
+                <a href="{{url_for('update',upload_id=upload.id)}}">Update</a>
+
         {%endfor%}
+        
     </div>
      <a href="{{url_for('home')}}">Home </a>
 </body>
